@@ -39,10 +39,11 @@ for i=1:length(extracted_samples)-1
         omega1 = calib_gyro_samples(1:3,i+1);
         q = quat_Integration_StepRK4(q, omega0, omega1, dt);
     end
-    q = quaternConj(q);
     rot_mat = quatern2rotMat(q);
     diff = rot_mat * g_versor_pos0 - g_versor_pos1;
+    
     cost_function((i-1)*3+1) = diff(1);
     cost_function((i-1)*3+2) = diff(2);
     cost_function((i-1)*3+3) = diff(3);
+    
 end

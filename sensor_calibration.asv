@@ -6,7 +6,6 @@ ToDeg = 180/pi;ToRad = pi/180;
 GravityAcc = 980.665;
 IMU_Sensors_Count = 1;
 freq_sdlog = 50;
-dt = 1/freq_sdlog;
 
 %% 导入数据
 name='校准1';
@@ -107,10 +106,9 @@ acc1_filter_x = filter(b,a,acc1_x);
 acc1_filter_y = filter(b,a,acc1_y);
 acc1_filter_z = filter(b,a,acc1_z);
 
-raw_data = [gyro1_raw_x;gyro1_raw_y;gyro1_raw_z;...
-        acc1_raw_x;acc1_raw_y;acc1_raw_z];
-acc_raw = [acc1_raw_x;acc1_raw_y;acc1_raw_z];
-gyro_raw = [gyro1_raw_x;gyro1_raw_y;gyro1_raw_z];
+data_raw = [gyro1_raw_x;gyro1_raw_y;gyro1_raw_z;...
+        acc1_raw_x;acc1_raw_y;acc1_raw_z;];
+data_raw_acc = [acc1_raw_x;acc1_raw_y;acc1_raw_z;];
 
 % norm_raw_acc = zeros(1,length(acc1_raw_x));
 % for i=1:length(acc1_raw_x)
@@ -121,15 +119,14 @@ gyro_raw = [gyro1_raw_x;gyro1_raw_y;gyro1_raw_z];
 %% 初始静止阶段
 init_interval_duration = 30;
 end_idx = init_interval_duration * freq_sdlog;
-start_idx = 1 * freq_sdlog;
 % 加速度方差
-variance_acc_x = var(raw_data(4,start_idx:end_idx));
-variance_acc_y = var(raw_data(5,start_idx:end_idx));
-variance_acc_z = var(raw_data(6,start_idx:end_idx));
+variance_acc_x = var(data_raw(4,50:end_idx));
+variance_acc_y = var(data_raw(5,50:end_idx));
+variance_acc_z = var(data_raw(6,50:end_idx));
 variance_acc = [variance_acc_x,variance_acc_y,variance_acc_z];
 norm_variance_acc = norm(variance_acc);
 % 陀螺零偏
-gyro_bias = mean(gyro_raw(1:3,start_idx:end_idx),2);
+gyro_bias_x = mean()
 
 %% 加速度计校准
 acc_calib_params_9 = [];resnorm_9 = [];
@@ -140,13 +137,12 @@ error_calib_9 = [];error_calib_12 = [];
 init_acc_calib_9 =[0,0,0,1,1,1,0,0,0];
 init_acc_calib_12 =[0,0,0,0,0,0,1,1,1,0,0,0];
 win = 50;min_size = 100;mean_enable = true;
-fprintf('Calibration Accelerometer:\n');
 for i=1:IMU_Sensors_Count
     for k=2:10
         % 静态检测
         threshold = k * norm_variance_acc;
-        intervals = static_intervals_detector(acc_raw,threshold,win);
-        [cur_extracted_samples,cur_extracted_intervals] = extract_intervals_samples(acc_raw, intervals, min_size, mean_enable);
+        intervals = static_intervals_detector(data_raw_acc,threshold,win);
+        [cur_extracted_samples,cur_extracted_intervals] = extract_intervals_samples(data_raw_acc, intervals, min_size, mean_enable);
         %     extracted_samples = [extracted_samples;cur_extracted_samples];
         %     extracted_intervals = [extracted_intervals;cur_extracted_intervals];
         
@@ -176,23 +172,11 @@ for i=1:IMU_Sensors_Count
         error_calib_12 = [error_calib_12;mean(abs(norm_calib_acc - 1365*ones(1,length(norm_calib_acc))))];
     end
 end
-calib_acc_samples = unbiasNormalize_12(acc_raw,cur_acc_calib_params_12);
+calib_acc_samples = unbiasNormalize_12(data_raw_acc,cur_acc_calib_params_12);
 
 %% 陀螺校准
 extracted_samples = [];extracted_intervals = [];
 [extracted_samples,extracted_intervals] = extract_intervals_samples(calib_acc_samples, cur_extracted_intervals, min_size, mean_enable);
-
-gyro_calib = [0,0,0,0,0,0,1,1,1,gyro_bias(1),gyro_bias(2),gyro_bias(3)];
-gyro_unbias = unbiasNormalize_12(gyro_raw,gyro_calib);
-
-init_gyro_calib =[0,0,0,0,0,0,1,1,1];
-fprintf('Calibration Gyroscope:\n');
-options=optimset('TolX',1e-6,'TolFun',1e-6,'Algorithm','Levenberg-Marquardt');
-% for i=1:IMU_Sensors_Count
-%     [gyro_calib_params,gyro_calib_resnorm] = lsqnonlin(@(gyro_calib_params) cost_gyro( gyro_calib_params, gyro_unbias, dt, extracted_samples, extracted_intervals ), init_gyro_calib, [],[],options);
-%     calib_gyro_samples = unbiasNormalize_12(gyro_raw,gyro_calib_params);
-%     
-% end
 
 %% 画图
 time = time * 1e-3;

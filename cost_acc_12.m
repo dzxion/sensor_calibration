@@ -11,7 +11,7 @@ scale_mat = [acc_calib_params(7) ,  0   ,  0;
 bias_vec = [acc_calib_params(10);acc_calib_params(11);acc_calib_params(12)];
 
 for i=1:length(static_samples)
-    cost_function(i,1)=(1365-(norm(mis_mat*scale_mat*(static_samples(:,i)+bias_vec))));
+    cost_function(i,1)=(1365-(norm(mis_mat*scale_mat*(static_samples(:,i)-bias_vec))));
 end
 
 end
