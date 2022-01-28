@@ -5,12 +5,13 @@ clc
 ToDeg = 180/pi;ToRad = pi/180;
 GravityAcc = 980.665;
 IMU_Sensors_Count = 1;
-freq_sdlog = 50;
+freq_sdlog = 250;
 dt = 1/freq_sdlog;
+calib_enable = false;
 
 %% 导入数据
-name='校准1';
-fip=fopen([name,'.REC'],'rb');
+path = 'REC/校准3 250hz.REC';
+fip=fopen(path,'rb');
 if fip==-1
     return
 end
@@ -40,7 +41,7 @@ while ~feof(fip)
         acc1_raw_y(imu_cnt)=(fread(fip,[1,1],'float')-32768);
         acc1_raw_z(imu_cnt)=(fread(fip,[1,1],'float')-32768);
         
-        time(imu_cnt)=fread(fip,[1,1],'float');
+%         time(imu_cnt)=fread(fip,[1,1],'float');
         
 %         gyro2_x_raw(imu_cnt)=fread(fip,[1,1],'float');
 %         gyro2_y_raw(imu_cnt)=fread(fip,[1,1],'float');
@@ -68,6 +69,10 @@ while ~feof(fip)
     end
 end
 fclose(fip);
+
+if calib_enable ~= true
+    error('calib disable');
+end
 
 gyro1_x = ((gyro1_raw_x) / 16.384);
 gyro1_y = ((gyro1_raw_y) / 16.384);
@@ -119,7 +124,7 @@ gyro_raw = [gyro1_raw_x;gyro1_raw_y;gyro1_raw_z];
 % end
 
 %% 初始静止阶段
-init_interval_duration = 30;
+init_interval_duration = 50;
 end_idx = init_interval_duration * freq_sdlog;
 start_idx = 1 * freq_sdlog;
 % 加速度方差
