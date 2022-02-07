@@ -1,3 +1,8 @@
+% 初始静止阶段 10s 计算加速度方差+陀螺零偏
+% 总记录数据时间 3min
+% 加速度计使用12参数
+% 坐标系 左后上
+
 close all
 clear all
 clc
@@ -7,7 +12,7 @@ GravityAcc = 980.665;
 IMU_Sensors_Count = 1;
 freq_sdlog = 250;
 dt = 1/freq_sdlog;
-calib_enable = false;
+start = 3;
 
 %% 导入数据
 path = 'REC/校准3 250hz.REC';
@@ -34,15 +39,13 @@ while ~feof(fip)
         imu_sys_time(imu_cnt)=Time(k);
         
         gyro1_raw_x(imu_cnt)=(fread(fip,[1,1],'float')-32768);
-        gyro1_raw_y(imu_cnt)=(fread(fip,[1,1],'float')-32768);
+        gyro1_raw_y(imu_cnt)= -(fread(fip,[1,1],'float')-32768);
         gyro1_raw_z(imu_cnt)=(fread(fip,[1,1],'float')-32768);
         
         acc1_raw_x(imu_cnt)=(fread(fip,[1,1],'float')-32768);
         acc1_raw_y(imu_cnt)=(fread(fip,[1,1],'float')-32768);
         acc1_raw_z(imu_cnt)=(fread(fip,[1,1],'float')-32768);
-        
-%         time(imu_cnt)=fread(fip,[1,1],'float');
-        
+                
 %         gyro2_x_raw(imu_cnt)=fread(fip,[1,1],'float');
 %         gyro2_y_raw(imu_cnt)=fread(fip,[1,1],'float');
 %         gyro2_z_raw(imu_cnt)=fread(fip,[1,1],'float');
@@ -70,7 +73,7 @@ while ~feof(fip)
 end
 fclose(fip);
 
-if calib_enable ~= true
+if start == 0
     error('calib disable');
 end
 
@@ -112,8 +115,6 @@ acc1_filter_x = filter(b,a,acc1_x);
 acc1_filter_y = filter(b,a,acc1_y);
 acc1_filter_z = filter(b,a,acc1_z);
 
-raw_data = [gyro1_raw_x;gyro1_raw_y;gyro1_raw_z;...
-        acc1_raw_x;acc1_raw_y;acc1_raw_z];
 acc_raw = [acc1_raw_x;acc1_raw_y;acc1_raw_z];
 gyro_raw = [gyro1_raw_x;gyro1_raw_y;gyro1_raw_z];
 
@@ -124,17 +125,21 @@ gyro_raw = [gyro1_raw_x;gyro1_raw_y;gyro1_raw_z];
 % end
 
 %% 初始静止阶段
-init_interval_duration = 50;
+init_interval_duration = 10;
 end_idx = init_interval_duration * freq_sdlog;
 start_idx = 1 * freq_sdlog;
 % 加速度方差
-variance_acc_x = var(raw_data(4,start_idx:end_idx));
-variance_acc_y = var(raw_data(5,start_idx:end_idx));
-variance_acc_z = var(raw_data(6,start_idx:end_idx));
+variance_acc_x = var(acc_raw(1,start_idx:end_idx));
+variance_acc_y = var(acc_raw(2,start_idx:end_idx));
+variance_acc_z = var(acc_raw(3,start_idx:end_idx));
 variance_acc = [variance_acc_x,variance_acc_y,variance_acc_z];
 norm_variance_acc = norm(variance_acc);
 % 陀螺零偏
 gyro_bias = mean(gyro_raw(1:3,start_idx:end_idx),2);
+
+if start == 1
+    error('calib static stage');
+end
 
 %% 加速度计校准
 acc_calib_params_9 = [];resnorm_9 = [];
@@ -142,16 +147,21 @@ acc_calib_params_12 = [];resnorm_12 = [];
 extracted_samples = [];extracted_intervals = [];
 error_calib_9 = [];error_calib_12 = [];
 
+min_error = 100;
+min_error_k = -1;
+min_error_static_intervals = [];
+min_error_acc_calib_params = [];
 init_acc_calib_9 =[0,0,0,1,1,1,0,0,0];
 init_acc_calib_12 =[0,0,0,0,0,0,1,1,1,0,0,0];
-win = 50;min_size = 100;mean_enable = true;
+win_time_sec = 1;
+win_half = (win_time_sec/2)*freq_sdlog;win = win_time_sec * freq_sdlog;mean_enable = true;
 fprintf('Calibration Accelerometer:\n');
 for i=1:IMU_Sensors_Count
     for k=2:10
         % 静态检测
         threshold = k * norm_variance_acc;
-        intervals = static_intervals_detector(acc_raw,threshold,win);
-        [cur_extracted_samples,cur_extracted_intervals] = extract_intervals_samples(acc_raw, intervals, min_size, mean_enable);
+        intervals = static_intervals_detector(acc_raw,threshold,win_half);
+        [cur_extracted_samples,cur_extracted_intervals] = extract_intervals_samples(acc_raw, intervals, win, mean_enable);
         %     extracted_samples = [extracted_samples;cur_extracted_samples];
         %     extracted_intervals = [extracted_intervals;cur_extracted_intervals];
         
@@ -162,14 +172,14 @@ for i=1:IMU_Sensors_Count
         %         [cur_acc_calib_params_12, cur_resnorm_12] = lsqnonlin(@(cur_acc_calib_params_12) cost_acc(cur_acc_calib_params_12,cur_extracted_samples,12), init_acc_calib_12);
         %         acc_calib_params_12 = [acc_calib_params_12;cur_acc_calib_params_12];resnorm_12 = [resnorm_12;cur_resnorm_12];
         
-        [cur_acc_calib_params_9,cur_resnorm_9] = lsqnonlin(@(acc_calib_params) cost_acc_9(acc_calib_params,cur_extracted_samples), init_acc_calib_9, [],[],options);
-        acc_calib_params_9 = [acc_calib_params_9;cur_acc_calib_params_9];resnorm_9 = [resnorm_9;cur_resnorm_9];
-        acc_calib_ext_9 = unbiasNormalize_9(cur_extracted_samples, cur_acc_calib_params_9);
-        norm_calib_acc = [];
-        for i=1:length(cur_extracted_samples)
-            norm_calib_acc(i) = norm(acc_calib_ext_9(:,i));
-        end
-        error_calib_9 = [error_calib_9;mean(abs(norm_calib_acc - 1365*ones(1,length(norm_calib_acc))))];
+%         [cur_acc_calib_params_9,cur_resnorm_9] = lsqnonlin(@(acc_calib_params) cost_acc_9(acc_calib_params,cur_extracted_samples), init_acc_calib_9, [],[],options);
+%         acc_calib_params_9 = [acc_calib_params_9;cur_acc_calib_params_9];resnorm_9 = [resnorm_9;cur_resnorm_9];
+%         acc_calib_ext_9 = unbiasNormalize_9(cur_extracted_samples, cur_acc_calib_params_9);
+%         norm_calib_acc = [];
+%         for i=1:length(cur_extracted_samples)
+%             norm_calib_acc(i) = norm(acc_calib_ext_9(:,i));
+%         end
+%         error_calib_9 = [error_calib_9;mean(abs(norm_calib_acc - 1365*ones(1,length(norm_calib_acc))))];
         
         [cur_acc_calib_params_12,cur_resnorm_12] = lsqnonlin(@(acc_calib_params) cost_acc_12(acc_calib_params,cur_extracted_samples), init_acc_calib_12,[],[], options);
         acc_calib_params_12 = [acc_calib_params_12;cur_acc_calib_params_12];resnorm_12 = [resnorm_12;cur_resnorm_12];
@@ -178,30 +188,19 @@ for i=1:IMU_Sensors_Count
         for i=1:length(cur_extracted_samples)
             norm_calib_acc(i) = norm(acc_calib_ext_12(:,i));
         end
-        error_calib_12 = [error_calib_12;mean(abs(norm_calib_acc - 1365*ones(1,length(norm_calib_acc))))];
+        error_calib_12 = max(abs(norm_calib_acc - 1365*ones(1,length(norm_calib_acc))));
+        if error_calib_12 < min_error
+            min_error = error_calib_12;
+            min_error_k = k;
+            min_error_static_intervals = cur_extracted_intervals;
+            min_error_acc_calib_params = cur_acc_calib_params_12;
+        end
     end
 end
 calib_acc_samples = unbiasNormalize_12(acc_raw,cur_acc_calib_params_12);
 
-%% 陀螺校准
-extracted_samples = [];extracted_intervals = [];
-[extracted_samples,extracted_intervals] = extract_intervals_samples(calib_acc_samples, cur_extracted_intervals, min_size, mean_enable);
-
-gyro_calib = [0,0,0,0,0,0,1,1,1,gyro_bias(1),gyro_bias(2),gyro_bias(3)];
-gyro_unbias = unbiasNormalize_12(gyro_raw,gyro_calib);
-
-init_gyro_calib =[0,0,0,0,0,0,1,1,1];
-fprintf('Calibration Gyroscope:\n');
-options=optimset('TolX',1e-6,'TolFun',1e-6,'Algorithm','Levenberg-Marquardt');
-% for i=1:IMU_Sensors_Count
-%     [gyro_calib_params,gyro_calib_resnorm] = lsqnonlin(@(gyro_calib_params) cost_gyro( gyro_calib_params, gyro_unbias, dt, extracted_samples, extracted_intervals ), init_gyro_calib, [],[],options);
-%     calib_gyro_samples = unbiasNormalize_12(gyro_raw,gyro_calib_params);
-%     
-% end
-
-%% 画图
-time = time * 1e-3;
-
+%% 画静态检测效果
+Time = Time * 1e-3;
 plotintervals = zeros(1,length(acc1_raw_x));
 k = 1e3;
 for i=1:length(cur_extracted_intervals)
@@ -209,13 +208,33 @@ for i=1:length(cur_extracted_intervals)
 end
 
 figure
-plot(time,acc1_raw_x);
+plot(Time,acc1_raw_x);
 grid on;hold on;
-plot(time,acc1_raw_y);
+plot(Time,acc1_raw_y);
 grid on;hold on;
-plot(time,acc1_raw_z);
+plot(Time,acc1_raw_z);
 grid on;hold on;
-plot(time,plotintervals);
+plot(Time,plotintervals);
 xlabel('time');
 ylabel('acc raw');
 legend('acc raw x','acc raw y','acc raw z');
+
+if start == 2
+    error('calib accelerometer finish');
+end
+
+%% 陀螺校准
+extracted_samples = [];extracted_intervals = [];
+[extracted_samples,extracted_intervals] = extract_intervals_samples(calib_acc_samples, cur_extracted_intervals, win, mean_enable);
+
+gyro_calib = [0,0,0,0,0,0,1,1,1,gyro_bias(1),gyro_bias(2),gyro_bias(3)];
+gyro_unbias = unbiasNormalize_12(gyro_raw,gyro_calib);
+
+init_gyro_calib =[0,0,0,0,0,0,1,1,1];
+fprintf('Calibration Gyroscope:\n');
+options=optimset('TolX',1e-6,'TolFun',1e-6,'Algorithm','Levenberg-Marquardt');
+for i=1:IMU_Sensors_Count
+    [gyro_calib_params,gyro_calib_resnorm] = lsqnonlin(@(gyro_calib_params) cost_gyro( gyro_calib_params, gyro_unbias, dt, extracted_samples, extracted_intervals ), init_gyro_calib, [],[],options);
+%     calib_gyro_samples = unbiasNormalize_12(gyro_raw,gyro_calib_params);
+    
+end

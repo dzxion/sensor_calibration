@@ -30,7 +30,7 @@ for i=1:length(extracted_samples)-1
     % 计算带优化参数的陀螺数据
     for i=gyro_interval.start_idx:gyro_interval.end_idx
         cur_calib_gyro_samples = mis_mat*scale_mat*(gyro_samples(:,i)-bias_vec);
-        calib_gyro_samples = [calib_gyro_samples,cur_calib_gyro_samples];
+        calib_gyro_samples = [calib_gyro_samples;cur_calib_gyro_samples];
     end
     % RK4积分
     q = [1,0,0,0];
