@@ -158,13 +158,26 @@ win_time_sec = 1;
 win_half = (win_time_sec/2)*freq_sdlog;win = win_time_sec * freq_sdlog;mean_enable = true;
 fprintf('Calibration Accelerometer:\n');
 for i=1:IMU_Sensors_Count
-    for k=2:10
+%     for k=2:10
         % 静态检测
+        k = 10;
         threshold = k * norm_variance_acc;
         intervals = static_intervals_detector(acc_raw,threshold,win_half);
         [cur_extracted_samples,cur_extracted_intervals] = extract_intervals_samples(acc_raw, intervals, win, mean_enable);
         %     extracted_samples = [extracted_samples;cur_extracted_samples];
         %     extracted_intervals = [extracted_intervals;cur_extracted_intervals];
+%         for i=1:length(cur_extracted_samples)
+% %             fprintf('sample %d (before calibration)\n',i);
+% %             fprintf('acceleration before calibration :');
+% %             cur_extracted_samples(:,i)
+%             fprintf('error norm : %d\n',abs(norm(cur_extracted_samples(:,i))-1365) );
+%         end
+
+        for i=1:length(cur_extracted_samples)
+             norm_before(i) = norm(cur_extracted_samples(:,i));
+        end
+        error_before = max(abs(norm_before - 1365*ones(1,length(norm_before))));
+        fprintf('error max norm before : %d\n',error_before );
         
         % lsqnonlin优化
         options=optimset('TolX',1e-6,'TolFun',1e-6,'Algorithm','Levenberg-Marquardt');
@@ -183,20 +196,20 @@ for i=1:IMU_Sensors_Count
 %         error_calib_9 = [error_calib_9;mean(abs(norm_calib_acc - 1365*ones(1,length(norm_calib_acc))))];
         
         [cur_acc_calib_params_12,cur_resnorm_12] = lsqnonlin(@(acc_calib_params) cost_acc_12(acc_calib_params,cur_extracted_samples), init_acc_calib_12,[],[], options);
-        acc_calib_params_12 = [acc_calib_params_12;cur_acc_calib_params_12];resnorm_12 = [resnorm_12;cur_resnorm_12];
-        acc_calib_ext_12 = unbiasNormalize_12(cur_extracted_samples, cur_acc_calib_params_12);
-        norm_calib_acc = [];
-        for i=1:length(cur_extracted_samples)
-            norm_calib_acc(i) = norm(acc_calib_ext_12(:,i));
-        end
-        error_calib_12 = max(abs(norm_calib_acc - 1365*ones(1,length(norm_calib_acc))));
-        if error_calib_12 < min_error
-            min_error = error_calib_12;
-            min_error_k = k;
-            min_error_static_intervals = cur_extracted_intervals;
-            min_error_acc_calib_params = cur_acc_calib_params_12;
-        end
-    end
+%         acc_calib_params_12 = [acc_calib_params_12;cur_acc_calib_params_12];resnorm_12 = [resnorm_12;cur_resnorm_12];
+%         acc_calib_ext_12 = unbiasNormalize_12(cur_extracted_samples, cur_acc_calib_params_12);
+%         norm_calib_acc = [];
+%         for i=1:length(cur_extracted_samples)
+%             norm_calib_acc(i) = norm(acc_calib_ext_12(:,i));
+%         end
+%         error_calib_12 = max(abs(norm_calib_acc - 1365*ones(1,length(norm_calib_acc))));
+%         if error_calib_12 < min_error
+%             min_error = error_calib_12;
+%             min_error_k = k;
+%             min_error_static_intervals = cur_extracted_intervals;
+%             min_error_acc_calib_params = cur_acc_calib_params_12;
+%         end
+%     end
 end
 calib_acc_samples = unbiasNormalize_12(acc_raw,cur_acc_calib_params_12);
 
@@ -224,19 +237,32 @@ if start == 2
     error('calib accelerometer finish');
 end
 
-%% 陀螺校准
-sensitivity = ToRad / 16.384;
+%% 加速度校准评估
 extracted_samples = [];extracted_intervals = [];
 [extracted_samples,extracted_intervals] = extract_intervals_samples(calib_acc_samples, cur_extracted_intervals, win, mean_enable);
+% for i=1:length(extracted_samples)
+% %             fprintf('sample %d (before calibration)\n',i);
+% %             fprintf('acceleration before calibration :');
+% %             cur_extracted_samples(:,i)
+%     fprintf('error norm : %d\n',abs(norm(extracted_samples(:,i))-1365) );
+% end
+for i=1:length(extracted_samples)
+    norm_after(i) = norm(extracted_samples(:,i));
+end
+error_after = max(abs(norm_after - 1365*ones(1,length(norm_after))));
+fprintf('error max norm after: %d\n',error_after );
 
+%% 陀螺校准
+sensitivity = ToRad / 16.384;
 gyro_calib = [0,0,0,0,0,0,1,1,1,gyro_bias(1),gyro_bias(2),gyro_bias(3)];
 gyro_unbias = unbiasNormalize_12(gyro_raw,gyro_calib);
 
 init_gyro_calib =[0,0,0,0,0,0,1,1,1];
 fprintf('Calibration Gyroscope:\n');
+
 options=optimset('TolX',1e-6,'TolFun',1e-6,'Algorithm','Levenberg-Marquardt');
 for i=1:IMU_Sensors_Count
     [gyro_calib_params,gyro_calib_resnorm] = lsqnonlin(@(gyro_calib_params) cost_gyro( gyro_calib_params, gyro_unbias, dt, extracted_samples, extracted_intervals, sensitivity), init_gyro_calib, [],[],options);
 %     calib_gyro_samples = unbiasNormalize_12(gyro_raw,gyro_calib_params);
-    
 end
+fprintf('Calibration finish:\n');
