@@ -2,6 +2,7 @@
 % 总记录数据时间 3min
 % 加速度计使用12参数
 % 坐标系 左后上
+% imutype - bmi088
 
 close all
 clear all
@@ -224,6 +225,7 @@ if start == 2
 end
 
 %% 陀螺校准
+sensitivity = ToRad / 16.384;
 extracted_samples = [];extracted_intervals = [];
 [extracted_samples,extracted_intervals] = extract_intervals_samples(calib_acc_samples, cur_extracted_intervals, win, mean_enable);
 
@@ -234,7 +236,7 @@ init_gyro_calib =[0,0,0,0,0,0,1,1,1];
 fprintf('Calibration Gyroscope:\n');
 options=optimset('TolX',1e-6,'TolFun',1e-6,'Algorithm','Levenberg-Marquardt');
 for i=1:IMU_Sensors_Count
-    [gyro_calib_params,gyro_calib_resnorm] = lsqnonlin(@(gyro_calib_params) cost_gyro( gyro_calib_params, gyro_unbias, dt, extracted_samples, extracted_intervals ), init_gyro_calib, [],[],options);
+    [gyro_calib_params,gyro_calib_resnorm] = lsqnonlin(@(gyro_calib_params) cost_gyro( gyro_calib_params, gyro_unbias, dt, extracted_samples, extracted_intervals, sensitivity), init_gyro_calib, [],[],options);
 %     calib_gyro_samples = unbiasNormalize_12(gyro_raw,gyro_calib_params);
     
 end

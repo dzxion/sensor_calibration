@@ -1,10 +1,11 @@
-function cost_function = cost_gyro(gyro_calib_params, gyro_samples, dt, extracted_samples, extracted_intervals)
+function cost_function = cost_gyro(gyro_calib_params, gyro_samples, dt, extracted_samples, extracted_intervals, sensitivity)
 % input:
 % gyro_calib_params - 待优化的陀螺参数
 % gyro_samples - 陀螺原始数据（去零偏）
 % dt - 角速度采样时间
 % extracted_samples - 重力静态数据（校准后的）
 % extracted_intervals - 静态区间
+% sensitivity - 陀螺灵敏度（转化为弧度）
 %
 % output:
 % cost_function - 代价函数（向量）
@@ -30,7 +31,8 @@ for i=1:length(extracted_samples)-1
     % 计算带优化参数的陀螺数据
     for i=gyro_interval.start_idx:gyro_interval.end_idx
         cur_calib_gyro_samples = mis_mat*scale_mat*(gyro_samples(:,i)-bias_vec);
-        calib_gyro_samples = [calib_gyro_samples;cur_calib_gyro_samples];
+        cur_calib_gyro_samples = cur_calib_gyro_samples * sensitivity;
+        calib_gyro_samples = [calib_gyro_samples,cur_calib_gyro_samples];
     end
     % RK4积分
     q = [1,0,0,0];
@@ -45,4 +47,6 @@ for i=1:length(extracted_samples)-1
     cost_function((i-1)*3+1) = diff(1);
     cost_function((i-1)*3+2) = diff(2);
     cost_function((i-1)*3+3) = diff(3);
+end
+
 end
