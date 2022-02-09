@@ -264,5 +264,51 @@ options=optimset('TolX',1e-6,'TolFun',1e-6,'Algorithm','Levenberg-Marquardt');
 for i=1:IMU_Sensors_Count
     [gyro_calib_params,gyro_calib_resnorm] = lsqnonlin(@(gyro_calib_params) cost_gyro( gyro_calib_params, gyro_unbias, dt, extracted_samples, extracted_intervals, sensitivity), init_gyro_calib, [],[],options);
 %     calib_gyro_samples = unbiasNormalize_12(gyro_raw,gyro_calib_params);
+    gyro_calib_params = [gyro_calib_params,gyro_bias(1),gyro_bias(2),gyro_bias(3)];
 end
 fprintf('Calibration finish:\n');
+
+%% 陀螺校准评估
+gyro_calib_before = gyro_unbias * sensitivity;
+gyro_calib_after = unbiasNormalize_12(gyro_raw,gyro_calib_params) * sensitivity;
+error_angle_before = [];
+error_angle_after = [];
+
+for i=1:length(extracted_samples)-1
+    g_versor_pos0 = extracted_samples(1:3,i);
+    g_versor_pos1 = extracted_samples(1:3,i+1);
+    g_versor_pos0 = g_versor_pos0 / norm(g_versor_pos0);
+    g_versor_pos1 = g_versor_pos1 / norm(g_versor_pos1);
+    gyro_interval.start_idx = extracted_intervals(i).end_idx;
+    gyro_interval.end_idx = extracted_intervals(i+1).start_idx;
+    
+    gyro_samples_before = gyro_calib_before(:,gyro_interval.start_idx:gyro_interval.end_idx);
+    gyro_samples_after = gyro_calib_after(:,gyro_interval.start_idx:gyro_interval.end_idx);
+    % RK4积分
+    q_before = [1,0,0,0];
+    q_after = [1,0,0,0];
+    for i=1:length(gyro_samples_before)-1
+        omega0 = gyro_samples_before(1:3,i);
+        omega1 = gyro_samples_before(1:3,i+1);
+        q_before = quat_Integration_StepRK4(q_before, omega0, omega1, dt);
+        
+        omega0 = gyro_samples_after(1:3,i);
+        omega1 = gyro_samples_after(1:3,i+1);
+        q_after = quat_Integration_StepRK4(q_after, omega0, omega1, dt);
+    end
+    q_before = quaternConj(q_before);
+    q_after = quaternConj(q_after);
+    rot_mat_before = quatern2rotMat(q_before);
+    rot_mat_after = quatern2rotMat(q_after);
+%     diff = rot_mat * g_versor_pos0 - g_versor_pos1;
+    [angle,axis] = get_included_angle_from_unit_vector(rot_mat_before * g_versor_pos0, g_versor_pos1);
+    error_angle_before = [error_angle_before,abs(angle)*ToDeg];
+%     fprintf('error angle before: %d \n',abs(angle)*ToDeg);
+    
+    [angle,axis] = get_included_angle_from_unit_vector(rot_mat_after * g_versor_pos0, g_versor_pos1);
+    error_angle_after = [error_angle_after,abs(angle)*ToDeg];
+%     fprintf('error angle after: %d \n',abs(angle)*ToDeg);
+end
+
+fprintf('error max angle before: %d\n',max(error_angle_before) );
+fprintf('error max angle after: %d\n',max(error_angle_after) );
