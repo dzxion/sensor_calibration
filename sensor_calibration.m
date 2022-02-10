@@ -1,9 +1,3 @@
-% 初始静止阶段 10s 计算加速度方差+陀螺零偏
-% 总记录数据时间 3min
-% 加速度计使用12参数
-% 坐标系 左后上
-% imutype - bmi088
-
 close all
 clear all
 clc
