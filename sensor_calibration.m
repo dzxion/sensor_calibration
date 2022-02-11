@@ -306,3 +306,12 @@ end
 
 fprintf('error max angle before: %d\n',max(error_angle_before) );
 fprintf('error max angle after: %d\n',max(error_angle_after) );
+
+%% 校准结果显示
+figure
+plot(norm_before*1000/1365);
+grid on;hold on;
+plot(norm_after*1000/1365);
+grid on;hold on;
+ylabel('accelration (mg)');
+legend('before','after');
