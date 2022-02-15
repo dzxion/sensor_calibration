@@ -263,24 +263,57 @@ end
 fprintf('Calibration finish:\n');
 
 %% 陀螺校准评估
-gyro_calib_before = gyro_unbias * sensitivity;
+gyro_calib_before = gyro_raw * sensitivity;
 gyro_calib_after = unbiasNormalize_12(gyro_raw,gyro_calib_params) * sensitivity;
 error_angle_before = [];
 error_angle_after = [];
+gyro_interval = [];
+q_before_int = [];
+q_after_int = [];
+q_debug_int = [];
+truth_roll = [];
+truth_pitch = [];
 
+% 加速度计计算rp
+for t=1:length(calib_acc_samples)
+    acc_b = calib_acc_samples(:,t);
+    acc_b = acc_b / norm(acc_b);
+    
+    pitch_acc(t) = -asin(acc_b(1)) * ToDeg;
+    roll_acc(t) = atan2(acc_b(2), acc_b(3)) * ToDeg;
+end
+
+% 分段姿态
+q_debug = [1,0,0,0];
 for i=1:length(extracted_samples)-1
     g_versor_pos0 = extracted_samples(1:3,i);
     g_versor_pos1 = extracted_samples(1:3,i+1);
     g_versor_pos0 = g_versor_pos0 / norm(g_versor_pos0);
     g_versor_pos1 = g_versor_pos1 / norm(g_versor_pos1);
+    
+    pitch_acc_pos0 = -asin(g_versor_pos0(1));
+    roll_acc_pos0 = atan2(g_versor_pos0(2), g_versor_pos0(3));
+    
+    pitch_acc_pos1 = -asin(g_versor_pos1(1));
+    roll_acc_pos1 = atan2(g_versor_pos1(2), g_versor_pos1(3));
+    
+%     truth_roll = [truth_roll,(roll_acc_pos1-roll_acc_pos0)*ToDeg];
+%     truth_pitch = [truth_pitch,(pitch_acc_pos1-pitch_acc_pos0)*ToDeg];
+    
+    truth_roll = [truth_roll,(roll_acc_pos1)*ToDeg];
+    truth_pitch = [truth_pitch,(pitch_acc_pos1)*ToDeg];
+    
     gyro_interval.start_idx = extracted_intervals(i).end_idx;
     gyro_interval.end_idx = extracted_intervals(i+1).start_idx;
     
     gyro_samples_before = gyro_calib_before(:,gyro_interval.start_idx:gyro_interval.end_idx);
     gyro_samples_after = gyro_calib_after(:,gyro_interval.start_idx:gyro_interval.end_idx);
     % RK4积分
-    q_before = [1,0,0,0];
-    q_after = [1,0,0,0];
+    q_before = euler2quatern(roll_acc_pos0, pitch_acc_pos0, 0);
+    q_after = euler2quatern(roll_acc_pos0, pitch_acc_pos0, 0);
+
+%     q_before = [1,0,0,0];
+%     q_after = [1,0,0,0];
     for i=1:length(gyro_samples_before)-1
         omega0 = gyro_samples_before(1:3,i);
         omega1 = gyro_samples_before(1:3,i+1);
@@ -290,6 +323,13 @@ for i=1:length(extracted_samples)-1
         omega1 = gyro_samples_after(1:3,i+1);
         q_after = quat_Integration_StepRK4(q_after, omega0, omega1, dt);
     end
+    q_debug = quaternProd(q_debug, q_after);
+    q_debug = q_debug / norm(q_debug);
+    q_debug_int = [q_debug_int;q_debug];
+    
+    q_before_int = [q_before_int;q_before];
+    q_after_int = [q_after_int;q_after];
+    
     q_before = quaternConj(q_before);
     q_after = quaternConj(q_after);
     rot_mat_before = quatern2rotMat(q_before);
@@ -303,9 +343,19 @@ for i=1:length(extracted_samples)-1
     error_angle_after = [error_angle_after,abs(angle)*ToDeg];
 %     fprintf('error angle after: %d \n',abs(angle)*ToDeg);
 end
+euler_before = quatern2euler(q_before_int)*ToDeg;
+euler_after = quatern2euler(q_after_int)*ToDeg;
+euler_debug = quatern2euler(q_debug_int)*ToDeg;
 
 fprintf('error max angle before: %d\n',max(error_angle_before) );
 fprintf('error max angle after: %d\n',max(error_angle_after) );
+
+% figure
+% plot(pitch_acc);
+% grid on;hold on;
+% for i=1:length()
+%     
+% end
 
 %% 校准结果显示
 figure
@@ -315,3 +365,81 @@ plot(norm_after*1000/1365);
 grid on;hold on;
 ylabel('accelration (mg)');
 legend('before','after');
+title('accelerometer calibration');
+
+acc_begin = extracted_samples(1:3,1);
+acc_begin = acc_begin / norm(acc_begin);
+pitch0 = -asin(acc_begin(1));
+roll0 = atan2(acc_begin(2), acc_begin(3));
+q0 = euler2quatern(roll0, pitch0, 0);
+
+% 陀螺积分
+q = [1,0,0,0];
+q_gyro_after = q0;
+q_gyro_before = q0;
+q_gyro_after_int = q0;
+q_gyro_before_int = q0;
+for i=1:length(gyro_calib_after)-1
+    if i < start_idx
+        q_gyro_after = q0;
+        q_gyro_before = q0;
+        q_gyro_after_int = [q_gyro_after_int;q_gyro_after];
+        q_gyro_before_int = [q_gyro_before_int;q_gyro_before];
+    else
+        omega0 = gyro_calib_after(1:3,i);
+        omega1 = gyro_calib_after(1:3,i+1);
+        q_gyro_after = quat_Integration_StepRK4(q_gyro_after, omega0, omega1, dt);
+        q_gyro_after_int = [q_gyro_after_int;q_gyro_after];
+        
+        omega0 = gyro_calib_before(1:3,i);
+        omega1 = gyro_calib_before(1:3,i+1);
+        q_gyro_before = quat_Integration_StepRK4(q_gyro_before, omega0, omega1, dt);
+        q_gyro_before_int = [q_gyro_before_int;q_gyro_before];
+    end
+end
+euler_gyro_after = quatern2euler(q_gyro_after_int)*ToDeg;
+euler_gyro_before = quatern2euler(q_gyro_before_int)*ToDeg;
+
+figure
+plot(truth_roll);
+grid on;hold on;
+plot(euler_before(:,1));
+grid on;hold on;
+plot(euler_after(:,1));
+grid on;hold on;
+ylabel('angle (deg)');
+legend('true','before','after');
+title('roll');
+% 
+figure
+plot(truth_pitch);
+grid on;hold on;
+plot(euler_before(:,2));
+grid on;hold on;
+plot(euler_after(:,2));
+grid on;hold on;
+ylabel('angle (deg)');
+legend('true','before','after');
+title('pitch');
+
+figure
+plot(Time,roll_acc);
+grid on;hold on;
+plot(Time,euler_gyro_before(:,1));
+grid on;hold on;
+plot(Time,euler_gyro_after(:,1));
+ylabel('angle (deg)');
+legend('acc','gyro before','gyro after');
+title('roll');
+
+figure
+plot(Time,pitch_acc);
+grid on;hold on;
+plot(Time,euler_gyro_before(:,2));
+grid on;hold on;
+plot(Time,euler_gyro_after(:,2));
+ylabel('angle (deg)');
+legend('acc','gyro before','gyro after');
+title('pitch');
+
+
